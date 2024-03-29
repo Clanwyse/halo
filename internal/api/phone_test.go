@@ -72,6 +72,8 @@ func (ts *PhoneTestSuite) TestFormatPhoneNumber() {
 func doTestSendPhoneConfirmation(ts *PhoneTestSuite, useTestOTP bool) {
 	u, err := models.FindUserByPhoneAndAudience(ts.API.db, "123456789", ts.Config.JWT.Aud)
 	require.NoError(ts.T(), err)
+	req, err := http.NewRequest("POST", "http://localhost:9998/otp", nil)
+	require.NoError(ts.T(), err)
 	cases := []struct {
 		desc     string
 		otpType  string
@@ -111,7 +113,9 @@ func doTestSendPhoneConfirmation(ts *PhoneTestSuite, useTestOTP bool) {
 		ts.Run(c.desc, func() {
 			provider := &TestSmsProvider{}
 
-			_, err = ts.API.sendPhoneConfirmation(ts.API.db, u, "123456789", c.otpType, provider, sms_provider.SMSProvider)
+			ctx := req.Context()
+
+			_, err = ts.API.sendPhoneConfirmation(ctx, req, ts.API.db, u, "123456789", c.otpType, provider, sms_provider.SMSProvider)
 			require.Equal(ts.T(), c.expected, err)
 			u, err = models.FindUserByPhoneAndAudience(ts.API.db, "123456789", ts.Config.JWT.Aud)
 			require.NoError(ts.T(), err)
@@ -155,8 +159,11 @@ func (ts *PhoneTestSuite) TestMissingSmsProviderConfig() {
 	u.PhoneConfirmedAt = &now
 	require.NoError(ts.T(), ts.API.db.Update(u), "Error updating new test user")
 
-	var token string
-	token, _, err = ts.API.generateAccessToken(context.Background(), ts.API.db, u, nil, models.OTP)
+	s, err := models.NewSession(u.ID, nil)
+	require.NoError(ts.T(), err)
+	require.NoError(ts.T(), ts.API.db.Create(s))
+
+	token, _, err := ts.API.generateAccessToken(context.Background(), ts.API.db, u, &s.ID, models.PasswordGrant)
 	require.NoError(ts.T(), err)
 
 	cases := []struct {
